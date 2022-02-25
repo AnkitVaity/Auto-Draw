@@ -4,9 +4,14 @@ import './App.css';
 import Tooltip from '@mui/material/Tooltip';
 import SaveAltIcon from '@mui/icons-material/SaveAlt';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import Backdrop from '@mui/material/Backdrop';
+import Button from '@mui/material/Button';
+
+import * as imageConversion from 'image-conversion';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { padding } from '@mui/system';
+
+import * as tf from '@tensorflow/tfjs';
 
 function App() {
   const canvasRef = useRef(null);
@@ -18,25 +23,17 @@ function App() {
     }
   }, [])
 
-  const colors = [
-    "red",
-    "green",
-    "yellow",
-    "black",
-    "blue"
-  ]
-
-  const [selectedColor, setSelectedColor] = useState("white");
+  const [selectedColor, setSelectedColor] = useState("black");
   const [mouseDown, setMouseDown] = useState(false);
   const [lastPosition, setPosition] = useState({x:0, y:0});
+  const [openStartScreen, setStartScreen] = useState(true);
+  const [model, setModel] = useState(null);
 
   const draw = useCallback((x, y) => {
-    console.log(selectedColor)
     if(mouseDown) {
-      console.log("draw", ctx)
       ctx.current.beginPath();
       ctx.current.strokeStyle = selectedColor;
-      ctx.current.lineWidth = 7;
+      ctx.current.lineWidth = 20;
       ctx.current.lineJoin = 'round';
       ctx.current.moveTo(lastPosition.x, lastPosition.y);
       ctx.current.lineTo(x, y)
@@ -61,23 +58,76 @@ function App() {
   }
 
   const download = async () => {
+    const model = await tf.loadLayersModel("https://quick-draw-model.s3.us-east.cloud-object-storage.appdomain.cloud/model_v4.json");
+
+    // console.log(model.summary())
+    // var ctx = canvasRef.current.getContext('2d');
+    // ctx.globalCompositeOperation = 'destination-over';
+    // ctx.fillStyle = 'black';
+    // ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+
     const image = canvasRef.current.toDataURL('image/png');
+
+    const new_image = imageConversion.imagetoCanvas(image);
+
+    // createImageBitmap(image, 0, 0, 32, 32),
+    // createImageBitmap(image, 32, 0, 32, 32)
+
     const blob = await (await fetch(image)).blob();
     const blobURL = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = blobURL;
     link.download = "image.png";
     link.click();
+
+    // const img = tf.browser.fromPixels(canvasRef.current).mean(2).expandDims(-1)
+    const img = tf.browser.fromPixels(canvasRef.current, 1)
+    console.log(img)
+    const resized = tf.image.resizeBilinear(img, [28, 28])
+    console.log(resized.shape)
+    const casted = resized.cast('int32')
+    const expanded = casted.expandDims(0)
+    console.log(expanded.shape)
+
+    const prediction_array = model.predict(expanded).dataSync();
+    console.log(prediction_array)
+
+    // ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
+
+    // let predictions = []
+    // for (let i = 0; i < 52; i++) {
+    //   predictions.push(prediction_array[i])
+    // }
+
+    // console.log(predictions)
+    tf.tensor1d(prediction_array).argMax().print()
+    // console.log(tf.argMax(prediction_array).dataSync())
+
+    tf.dispose(img)
+    tf.dispose(resized)
+    tf.dispose(casted)
+    tf.dispose(expanded)
+    tf.dispose(prediction_array)
   }
 
   const clear = () => {
     ctx.current.clearRect(0, 0, ctx.current.canvas.width, ctx.current.canvas.height)
   }
 
-  // console.log(mouseDown, lastPosition);
+  const handleStartScreenClose = () => {
+    setStartScreen(false);
+  };
 
   return (
     <div className="App">
+      <Backdrop
+        // sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}
+        open={openStartScreen}
+      >
+        <Button variant="outlined" size="large" color="primary" style={{fontSize: '1.7rem', textTransform: 'none'}} onClick={handleStartScreenClose}>
+          Let's Draw
+        </Button>
+      </Backdrop>
       <div></div>
       <div className="Main_Container">
 
@@ -154,8 +204,8 @@ function App() {
           }}
           ref={canvasRef}
 
-          width = {800}
-          height = {800}
+          width = {900}
+          height = {900}
 
           onMouseMove={onMouseMove}
           onMouseDown={onMouseDown}
@@ -163,18 +213,6 @@ function App() {
           onMouseLeave={onMouseUp}
         />
 
-      {/* <select
-        value={selectedColor}
-        onChange={(e) => setSelectedColor(e.target.value)}
-      >
-        {
-          colors.map(
-            color => <option key={color} value={color}>{color}</option>
-          )
-        }
-      </select>
-      <button onClick={clear}>Clear</button>
-      <button onClick={download}>Download</button> */}
           <div style={{ paddingRight: '20px'}}>
           <br/>
             <Tooltip title="Clear">
